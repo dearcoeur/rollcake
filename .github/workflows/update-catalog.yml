@@ -1,0 +1,37 @@
+name: Update catalog.json
+
+on:
+  schedule:
+    # a cada 3h — ajusta como quiser. Mais frequente = catálogo mais
+    # atualizado pros visitantes, mas cada run ainda é só UM processo
+    # batendo no Apps Script, não milhares de visitantes.
+    - cron: '0 */3 * * *'
+  workflow_dispatch: {} # permite rodar manualmente pelo GitHub
+
+jobs:
+  update-catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Gerar catalog.json
+        run: node scripts-node/generate-catalog.mjs
+
+      - name: Publicar catalog.json no Neocities
+        env:
+          NEOCITIES_API_KEY: ${{ secrets.NEOCITIES_API_KEY }}
+        run: |
+          curl --fail -F "catalog.json=@catalog.json" \
+            "https://neocities.org/api/upload?api_key=${NEOCITIES_API_KEY}"
+
+      - name: Commitar catalog.json no repo (histórico/backup)
+        run: |
+          git config user.name "rollcake-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add catalog.json
+          git diff --cached --quiet || git commit -m "chore: atualiza catalog.json [skip ci]"
+          git push
