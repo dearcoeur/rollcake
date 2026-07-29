@@ -25,8 +25,9 @@ jobs:
         env:
           NEOCITIES_API_KEY: ${{ secrets.NEOCITIES_API_KEY }}
         run: |
-          curl --fail -F "catalog.json=@catalog.json" \
-            "https://neocities.org/api/upload?api_key=${NEOCITIES_API_KEY}"
+          curl --fail -H "Authorization: Bearer ${NEOCITIES_API_KEY}" \
+            -F "catalog.json=@catalog.json" \
+            "https://neocities.org/api/upload"
 
       - name: Commitar catalog.json no repo (histórico/backup)
         run: |
