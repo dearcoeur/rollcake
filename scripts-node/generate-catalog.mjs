@@ -2,7 +2,12 @@ const OWN_DB_API = "https://script.google.com/macros/s/AKfycbyWdEvWnYWBLS-HnHrJf
 const PER_PAGE = 50;
 const MAX_PAGES = 300;
 const REQUEST_TIMEOUT_MS = 120000;
-const MAX_RETRIES_PER_PAGE = 3;
+const MAX_RETRIES_PER_PAGE = 5;
+const PAGE_DELAY_MS = 2000;
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
 
 async function fetchPage(page) {
   const url = new URL(OWN_DB_API);
@@ -23,7 +28,7 @@ async function fetchPage(page) {
       lastErr = err;
       const isTimeout = err.name === "AbortError";
       console.warn(`  página ${page}: tentativa ${attempt + 1} falhou (${isTimeout ? "TIMEOUT após " + REQUEST_TIMEOUT_MS + "ms" : err.message}), tentando de novo...`);
-      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+      await sleep(3000 * (attempt + 1));
     }
   }
   throw new Error(`página ${page} falhou depois de ${MAX_RETRIES_PER_PAGE + 1} tentativas: ${lastErr?.message}`);
@@ -40,6 +45,7 @@ async function main() {
     console.log(`Buscando página ${page}/${totalPages}...`);
     const res = await fetchPage(page);
     rawMangas.push(...(res.mangas || []));
+    await sleep(PAGE_DELAY_MS);
   }
   console.log(`Coletados ${rawMangas.length} registros brutos.`);
   const snapshot = {
