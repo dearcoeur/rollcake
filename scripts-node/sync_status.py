@@ -44,6 +44,7 @@ query ($id: Int) {
   Media (id: $id, type: MANGA) {
     id
     status(version: 2)
+    chapters
     title {
       romaji
     }
@@ -63,8 +64,9 @@ MAPEAMENTO_STATUS = {
 
 
 def obter_mangas_para_verificar():
-    """Busca no Notion todos os mangás em Releasing, Not Yet Released ou Hiatus
-    (são os únicos status que ainda podem mudar - Finished/Cancelled são terminais)."""
+    """Busca no Notion os mangás em Releasing, Not Yet Released ou Hiatus (que
+    ainda podem mudar de status), e também os Finished (pra conferir/corrigir
+    o campo 'chapters' caso esteja vazio ou desatualizado)."""
     url = f"https://api.notion.com/v1/data_sources/{DATA_SOURCE_ID}/query"
 
     filtro = {
@@ -73,6 +75,7 @@ def obter_mangas_para_verificar():
                 {"property": "status", "select": {"equals": "Releasing"}},
                 {"property": "status", "select": {"equals": "Not Yet Released"}},
                 {"property": "status", "select": {"equals": "Hiatus"}},
+                {"property": "status", "select": {"equals": "Finished"}},
             ]
         }
     }
@@ -81,7 +84,7 @@ def obter_mangas_para_verificar():
     has_more = True
     start_cursor = None
 
-    print("🔄 Buscando mangás elegíveis (Releasing / Not Yet Released / Hiatus) na sua database do Notion...")
+    print("🔄 Buscando mangás elegíveis (Releasing / Not Yet Released / Hiatus / Finished) na sua database do Notion...")
 
     while has_more:
         if start_cursor:
@@ -131,23 +134,25 @@ def consultar_anilist(anilist_id):
             return None
 
 
-def atualizar_status_notion(page_id, novo_status, titulo):
-    """Atualiza a coluna de Status do item no Notion."""
+def atualizar_pagina_notion(page_id, titulo, novo_status=None, total_capitulos=None):
+    """Atualiza a página no Notion. novo_status e total_capitulos são
+    independentes e opcionais - passe só o que precisa mudar."""
     url = f"https://api.notion.com/v1/pages/{page_id}"
 
-    payload = {
-        "properties": {
-            "status": {
-                "select": {
-                    "name": novo_status
-                }
-            }
-        }
-    }
+    properties = {}
+    if novo_status is not None:
+        properties["status"] = {"select": {"name": novo_status}}
+    if total_capitulos is not None:
+        properties["chapters"] = {"number": total_capitulos}
+
+    if not properties:
+        return True  # nada pra atualizar
+
+    payload = {"properties": properties}
 
     response = requests.patch(url, json=payload, headers=HEADERS_NOTION, timeout=REQUEST_TIMEOUT)
     if response.status_code == 200:
-        print(f"✨ [NOTION ATUALIZADO] '{titulo}' -> Alterado para '{novo_status}'")
+        print(f"✨ [NOTION ATUALIZADO] '{titulo}'")
         return True
     else:
         print(f"❌ Erro ao atualizar '{titulo}' no Notion: {response.text}")
@@ -179,6 +184,14 @@ def extrair_anilist_id(props):
     return None
 
 
+def extrair_chapters_atual(props):
+    """Lê o valor atual da propriedade 'chapters' (tipo Number)."""
+    chapters_prop = props.get("chapters", {})
+    if chapters_prop.get("type") == "number":
+        return chapters_prop.get("number")
+    return None
+
+
 def main():
     mangas_notion = obter_mangas_para_verificar()
 
@@ -195,6 +208,7 @@ def main():
         print(f"🔍 [{indice}/{total}] Verificando: {titulo}")
 
         status_atual_notion = props.get("status", {}).get("select", {}).get("name")
+        chapters_atual_notion = extrair_chapters_atual(props)
         anilist_id = extrair_anilist_id(props)
 
         if not anilist_id:
@@ -211,15 +225,36 @@ def main():
             continue
 
         status_anilist_cru = dados_anilist.get("status")
+        chapters_anilist = dados_anilist.get("chapters")
         status_traduzido_notion = MAPEAMENTO_STATUS.get(status_anilist_cru)
 
-        if status_traduzido_notion and status_traduzido_notion != status_atual_notion:
-            print(f"📢 Mudança detectada em '{titulo}': '{status_atual_notion}' -> '{status_anilist_cru}'")
-            sucesso = atualizar_status_notion(page_id, status_traduzido_notion, titulo)
-            if sucesso:
-                atualizados += 1
-        else:
-            print(f"   ✅ Sem mudanças (status atual: '{status_atual_notion}')")
+        # Status vai mudar?
+        status_mudou = bool(status_traduzido_notion) and status_traduzido_notion != status_atual_notion
+
+        # O mangá está (ou vai ficar) Finished, e o total de capítulos do
+        # AniList está disponível e diferente (ou vazio) no Notion?
+        status_final = status_traduzido_notion if status_mudou else status_atual_notion
+        chapters_precisa_corrigir = (
+            status_final == "Finished"
+            and chapters_anilist is not None
+            and chapters_anilist != chapters_atual_notion
+        )
+
+        if not status_mudou and not chapters_precisa_corrigir:
+            print(f"   ✅ Sem mudanças (status: '{status_atual_notion}', chapters: '{chapters_atual_notion}')")
+            continue
+
+        novo_status_para_enviar = status_traduzido_notion if status_mudou else None
+        capitulos_para_enviar = chapters_anilist if chapters_precisa_corrigir else None
+
+        if status_mudou:
+            print(f"📢 Mudança de status em '{titulo}': '{status_atual_notion}' -> '{status_traduzido_notion}'")
+        if chapters_precisa_corrigir:
+            print(f"   📖 Corrigindo capítulos de '{titulo}': '{chapters_atual_notion}' -> '{chapters_anilist}'")
+
+        sucesso = atualizar_pagina_notion(page_id, titulo, novo_status_para_enviar, capitulos_para_enviar)
+        if sucesso:
+            atualizados += 1
 
     print(f"\n🎯 Varredura concluída! Total de mangás atualizados nesta rodada: {atualizados}")
 
