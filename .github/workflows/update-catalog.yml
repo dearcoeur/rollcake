@@ -1,20 +1,29 @@
-name: Update catalog.json
-
+name: Sync status + Update catalog.json
 on:
   schedule:
-    # a cada 3h — ajusta como quiser. Mais frequente = catálogo mais
-    # atualizado pros visitantes, mas cada run ainda é só UM processo
-    # batendo no Apps Script, não milhares de visitantes.
-    - cron: '0 */3 * * *'
+    # 1x ao dia. Ajuste o horário (UTC) como preferir.
+    - cron: '0 6 * * *'
   workflow_dispatch: {} # permite rodar manualmente pelo GitHub
-
 jobs:
-  update-catalog:
+  sync-and-update-catalog:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências Python
+        run: pip install requests
+
+      - name: Sincronizar status com AniList (Notion)
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: python scripts-node/sync_status.py
 
       - uses: actions/setup-node@v4
         with:
@@ -27,7 +36,7 @@ jobs:
         env:
           NEOCITIES_API_KEY: ${{ secrets.NEOCITIES_API_KEY }}
         run: |
-          curl --fail -H "Authorization: Bearer ${NEOCITIES_API_KEY}" \
+          curl -s -w "\nHTTP_STATUS:%{http_code}\n" -H "Authorization: Bearer ${NEOCITIES_API_KEY}" \
             -F "catalog.json=@catalog.json" \
             "https://neocities.org/api/upload"
 
@@ -37,4 +46,5 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add catalog.json
           git diff --cached --quiet || git commit -m "chore: atualiza catalog.json [skip ci]"
+          git pull --rebase
           git push
