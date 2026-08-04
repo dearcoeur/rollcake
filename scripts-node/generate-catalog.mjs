@@ -11,9 +11,9 @@
 // Neocities em https://rollcake.site/catalog.json)
 
 const OWN_DB_API = "https://script.google.com/macros/s/AKfycbyWdEvWnYWBLS-HnHrJf-4rNsjEOYE08Bp1mVneIXMqPOO0g-28nCwLU70ltJFxNbDi/exec";
-const PER_PAGE = 200;
+const PER_PAGE = 50;
 const MAX_PAGES = 300;
-const REQUEST_TIMEOUT_MS = 60000; // roda num servidor, sem pressa do usuário — pode ser mais folgado
+const REQUEST_TIMEOUT_MS = 120000; // roda num servidor, sem pressa do usuário — pode ser mais folgado
 const MAX_RETRIES_PER_PAGE = 3;
 
 async function fetchPage(page) {
